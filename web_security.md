@@ -1,7 +1,5 @@
 # Web Security Academy Notes
 
----
-
 ## HTTP Host header attacks
 <details> <summary> ... </summary>
 
@@ -19,16 +17,12 @@ Host header is usually used by the web application to determine the identity of 
 #### . Routing-based SSRF
 </details>
 
----
-
 ## Authentication
 
 <details> <summary> ... </summary>
 
 ### In a nutshell
 </details>
-
----
 
 ## Cross-site request forgery (CSRF)
 
