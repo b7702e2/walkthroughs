@@ -308,12 +308,13 @@ root@kali:~/temp # aws --profile git s3api list-buckets
 
 ## Level 4
 
-Visiting the Level 4 web page gives us more information about this level. An EC2 instance is hosting a web server at http://4d0cf09b9b2d761a7d87be99d17507bce8b86f3b.flaws.cloud. And it seems that this level is about EC2 snapshots.
+Reading the Level 4 web page gives us more information about this level. An EC2 instance is hosting a web server at http://4d0cf09b9b2d761a7d87be99d17507bce8b86f3b.flaws.cloud. And it seems that this level is about attacking the compute instance used to run the web server, via attempting togain access to its historial snapshots.
 
 ### **EC2 snapshots**
-What can we do with snapshots?
+
+Assuming no console access, what can we do with snapshots at the command line?
 ```
-root@kali:~ # aws --profile git ec2 help | grep snapshot
+root@kali:~ # aws ec2 help | grep snapshot
        o copy-snapshot
        o create-snapshot
        o create-snapshots
@@ -327,16 +328,14 @@ root@kali:~ # aws --profile git ec2 help | grep snapshot
        o import-snapshot
        o modify-snapshot-attribute
        o reset-snapshot-attribute
+root@kali:~ # aws --profile git  ec2 describe-snapshots
+You must specify a region. You can also configure your region by running "aws configure".
 ```
 Most of them require specifying a region. The region of the Level 4 EC2 instance URL can be found via
 ```
 root@kali:~ # host 4d0cf09b9b2d761a7d87be99d17507bce8b86f3b.flaws.cloud
 4d0cf09b9b2d761a7d87be99d17507bce8b86f3b.flaws.cloud is an alias for ec2-35-165-182-7.us-west-2.compute.amazonaws.com.
 ec2-35-165-182-7.us-west-2.compute.amazonaws.com has address 35.165.182.7
-```
-More details of the `describe-snapshots` subcommand can be found at
-```
-aws ec2 describe-snapshots help
 ```
 To scope the snapshots to the leaked user credential, we use 
 ```
